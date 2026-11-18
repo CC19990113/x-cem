@@ -1,0 +1,13 @@
+[package]
+name = "x-cem"
+version = "0.1.0"
+edition = "2021"
+description = "词法级 TS/JS Custom Elements Manifest 生成器（零第三方依赖）"
+license = "MIT"
+
+# 硬约束：只允许 std。任何依赖都会破坏「自研工具」的定位。
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
