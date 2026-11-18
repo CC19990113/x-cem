@@ -1,6 +1,6 @@
 [package]
 name = "x-cem"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.70"
 description = "零第三方依赖的词法级 TS/JS Custom Elements Manifest 生成器（手写 lexer + JSON 序列化）"
