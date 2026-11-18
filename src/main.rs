@@ -1,10 +1,15 @@
 //! x-cem CLI。参数解析手写（不引 clap）。
+//!
+//! 所有 IO（参数解析、目录遍历、读文件、写输出）都留在这里与 [`cli`] 模块，
+//! 解析核心 `x_cem` 是纯函数，可被原生 CLI 与 wasm 两侧复用。
+
+mod cli;
 
 use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
-use x_cem::scan_dir_with_warnings;
+use cli::scan_dir_with_warnings;
 
 const USAGE: &str = "\
 x-cem — 词法级 TS/JS Custom Elements Manifest 生成器

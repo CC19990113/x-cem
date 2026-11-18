@@ -1,0 +1,41 @@
+{
+  "name": "x-cem",
+  "version": "0.1.0",
+  "description": "零依赖、词法级（不建 AST）的 TS/JS Custom Elements Manifest（CEM 2.1.0）生成器，wasm 跨平台分发",
+  "keywords": [
+    "custom-elements",
+    "custom-elements-manifest",
+    "cem",
+    "web-components",
+    "typescript",
+    "javascript",
+    "wasm",
+    "manifest"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "x-cem": "./cli.js"
+  },
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "cli.js",
+    "index.js",
+    "wasm-loader.js",
+    "core.wasm"
+  ],
+  "dependencies": {},
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CC19990113/x-cem"
+  },
+  "homepage": "https://github.com/CC19990113/x-cem#readme",
+  "bugs": {
+    "url": "https://github.com/CC19990113/x-cem/issues"
+  }
+}

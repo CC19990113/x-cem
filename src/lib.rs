@@ -9,15 +9,22 @@
 //! - 否则使用跨文件 define；多个不同 tag 视为冲突，不分配 tagName。
 //! - 同一个 class 名在多个模块中声明时，跨文件 define 无法确定归属，不分配。
 //! - 冲突 / 歧义会以 warning 文本返回，由 CLI 打到 stderr。
+//!
+//! # 纯核心
+//!
+//! 本 crate 不碰文件系统、不读环境变量：解析入口只接收 `(path, content)` 字符串。
+//! 目录遍历、读写文件、参数解析都在 CLI 层（`src/cli.rs` / `src/main.rs`）；
+//! wasm32 侧由 [`wasm_api`] 直接复用同一套纯函数。
 
 pub mod emit;
 pub mod jsdoc;
 pub mod lexer;
 
+/// wasm32 导出层：手写 `extern "C"`，只在 wasm 目标下编译。
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_api;
+
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
 
 use emit::{Declaration, Manifest, Module};
 use lexer::{Kind, Token};
@@ -69,44 +76,29 @@ pub fn analyze_source(src: &str) -> Vec<Declaration> {
         .unwrap_or_default()
 }
 
+/// 解析单个源码文件，返回该文件的 module 对象（没有声明时 `declarations` 为空）。
+///
+/// 纯函数：输入路径标签与源码文本，不碰文件系统；wasm 导出层直接复用。
+pub fn module_for_source(path: &str, src: &str) -> Module {
+    analyze_many(&[(path, src)])
+        .0
+        .modules
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| Module {
+            path: path.to_string(),
+            declarations: Vec::new(),
+        })
+}
+
 /// 解析单个源码文件并装上模块路径；没有任何声明时返回 None。
 pub fn manifest_for_source(path: &str, src: &str) -> Option<Module> {
-    analyze_many(&[(path, src)]).0.modules.into_iter().next()
-}
-
-/// 递归扫描目录（也接受单个文件），产出 Manifest。文件按路径排序，输出稳定。
-pub fn scan_dir(src: &Path) -> io::Result<Manifest> {
-    scan_dir_with_warnings(src).map(|(manifest, _)| manifest)
-}
-
-/// 同 [`scan_dir`]，额外返回跨文件关联的 warning。
-pub fn scan_dir_with_warnings(src: &Path) -> io::Result<(Manifest, Vec<String>)> {
-    let root = src
-        .canonicalize()
-        .map_err(|err| io::Error::new(err.kind(), format!("无法访问 {}: {err}", src.display())))?;
-    let cwd = std::env::current_dir().ok();
-    let mut analyses = Vec::new();
-
-    if root.is_file() {
-        let parent = root.parent().unwrap_or_else(|| Path::new("."));
-        analyses.push(scan_one(&root, parent, cwd.as_deref())?);
+    let module = module_for_source(path, src);
+    if module.declarations.is_empty() {
+        None
     } else {
-        for file in collect_files(&root)? {
-            analyses.push(scan_one(&file, &root, cwd.as_deref())?);
-        }
+        Some(module)
     }
-
-    let (modules, warnings) = assemble(analyses);
-    Ok((Manifest::new(modules), warnings))
-}
-
-/// 阶段一：读一个文件并收集 class / define 事实。
-fn scan_one(file: &Path, root: &Path, cwd: Option<&Path>) -> io::Result<FileAnalysis> {
-    let text = fs::read_to_string(file).map_err(|err| {
-        io::Error::new(err.kind(), format!("读取 {} 失败: {err}", file.display()))
-    })?;
-    let label = display_path(file, root, cwd);
-    Ok(analyze_one(&label, &text))
 }
 
 /// 词法扫一遍，抽出 class 声明与 define 调用。
@@ -314,54 +306,6 @@ fn define_detail(candidates: &[(usize, &str)], analyses: &[FileAnalysis]) -> Str
         .map(|(file_idx, tag)| format!("`{tag}` @ {}", analyses[*file_idx].path))
         .collect::<Vec<_>>()
         .join("、")
-}
-
-/// 优先输出相对 cwd 的路径；src 在 cwd 之外时退回相对 src 的路径。
-fn display_path(file: &Path, root: &Path, cwd: Option<&Path>) -> String {
-    let relative = cwd
-        .and_then(|cwd| file.strip_prefix(cwd).ok())
-        .or_else(|| file.strip_prefix(root).ok())
-        .unwrap_or(file);
-    relative.to_string_lossy().replace('\\', "/")
-}
-
-fn collect_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    walk(dir, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-
-fn walk(dir: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
-    let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)?.filter_map(Result::ok).collect();
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.starts_with('.')
-                || matches!(
-                    name.as_ref(),
-                    "node_modules" | "target" | "dist" | "coverage"
-                )
-            {
-                continue;
-            }
-            walk(&entry.path(), files)?;
-        } else if file_type.is_file() {
-            let is_source = entry
-                .path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext == "ts" || ext == "js");
-            if is_source {
-                files.push(entry.path());
-            }
-        }
-        // 符号链接直接跳过，避免目录环。
-    }
-    Ok(())
 }
 
 /// 从 `class` token 开始读类名与超类名。

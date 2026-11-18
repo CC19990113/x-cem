@@ -103,6 +103,17 @@ impl Module {
     pub fn to_json(&self) -> String {
         render_json("2.1.0", std::slice::from_ref(self))
     }
+
+    /// 只序列化模块对象本身：对应 CEM `modules[]` 里的一项，含
+    /// `kind` / `path` / `declarations`，**不带** `schemaVersion` 外壳。
+    ///
+    /// wasm 导出层用它给单个源文件出结果。
+    pub fn to_json_object(&self) -> String {
+        let mut out = String::with_capacity(4 * 1024);
+        write_module(&mut out, self, 0);
+        out.push('\n');
+        out
+    }
 }
 
 fn render_json(schema_version: &str, modules: &[Module]) -> String {

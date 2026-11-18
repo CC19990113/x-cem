@@ -2,12 +2,26 @@
 name = "x-cem"
 version = "0.1.0"
 edition = "2021"
-description = "词法级 TS/JS Custom Elements Manifest 生成器（零第三方依赖）"
+rust-version = "1.70"
+description = "零第三方依赖的词法级 TS/JS Custom Elements Manifest 生成器（手写 lexer + JSON 序列化）"
 license = "MIT"
+repository = "https://github.com/CC19990113/x-cem"
+homepage = "https://github.com/CC19990113/x-cem"
+readme = "README.md"
+keywords = ["custom-elements", "manifest", "web-components", "codegen", "cli"]
+categories = ["command-line-utilities", "web-programming"]
+# npm/ 是独立的 npm 包（内含 wasm 产物），不进 crates.io 的 .crate 包。
+exclude = ["npm/"]
 
 # 硬约束：只允许 std。任何依赖都会破坏「自研工具」的定位。
 [dependencies]
 
+[lib]
+# rlib 给原生 CLI / 测试，cdylib 给 wasm32（生成 x_cem.wasm，手写 C ABI 导出）。
+crate-type = ["cdylib", "rlib"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"
+# 去掉符号表，减小原生二进制与 wasm 体积；不改变优化行为。
+strip = true
