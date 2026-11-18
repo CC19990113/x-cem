@@ -3,11 +3,11 @@
  *
  * 原生 Custom Element，内部渲染真 `<button>`，事件跨 Shadow DOM 冒泡。
  *
- * @attr {('default'|'primary'|'danger'|'ghost')} [variant='default'] - 视觉变体
- * @attr {('sm'|'md'|'lg')} [size='md'] - 尺寸
+ * @attr {('default'|'primary'|'danger'|'ghost')} variant = default - 视觉变体
+ * @attr {('sm'|'md'|'lg')} size - 尺寸。Default: "md"
  * @attr {boolean} [disabled=false] - 禁用状态
- * @attr {boolean} [loading=false] - 加载中，显示 spinner 且阻断点击
- * @attr {('button'|'submit'|'reset')} [type='button'] - 原生 type
+ * @attr {boolean} loading - 加载中，显示 spinner 且阻断点击
+ * @attr {('button'|'submit'|'reset')} type = button - 原生 type
  * @slot - 按钮文字
  * @slot icon - 前置图标
  * @cssprop --x-button-height - 高度

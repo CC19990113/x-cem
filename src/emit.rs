@@ -56,6 +56,8 @@ pub type CssPart = DocumentedItem;
 #[derive(Debug, Clone, Default)]
 pub struct Declaration {
     pub name: String,
+    /// 组件描述（class 紧邻 JSDoc 的首段）；为空表示不输出该字段。
+    pub description: String,
     pub tag_name: Option<String>,
     pub custom_element: bool,
     pub attributes: Vec<Attribute>,
@@ -191,6 +193,13 @@ fn write_declaration(out: &mut String, declaration: &Declaration, level: usize) 
     indent(out, level + 1);
     out.push_str("\"name\": ");
     write_json_string(out, &declaration.name);
+
+    if !declaration.description.is_empty() {
+        out.push_str(",\n");
+        indent(out, level + 1);
+        out.push_str("\"description\": ");
+        write_json_string(out, &declaration.description);
+    }
 
     if let Some(tag_name) = &declaration.tag_name {
         out.push_str(",\n");

@@ -49,6 +49,24 @@ fn fixture_attributes_are_complete() {
     assert_eq!(disabled.description, "禁用状态");
     assert_eq!(disabled.default.as_deref(), Some("false"));
 
+    let size = &attributes[1];
+    assert_eq!(size.type_text.as_deref(), Some("('sm'|'md'|'lg')"));
+    assert_eq!(size.description, "尺寸。Default: \"md\"");
+    assert_eq!(
+        size.default.as_deref(),
+        Some("md"),
+        "描述里的 `Default: \"md\"` 要解析成去引号的裸值"
+    );
+
+    // 源码里没写默认值的布尔属性：不许凭空造 false。
+    let loading = &attributes[3];
+    assert_eq!(loading.type_text.as_deref(), Some("boolean"));
+    assert!(
+        loading.default.is_none(),
+        "无默认值的布尔属性不该有 default: {:?}",
+        loading.default
+    );
+
     assert_eq!(
         attributes[4].type_text.as_deref(),
         Some("('button'|'submit'|'reset')")
@@ -442,6 +460,109 @@ fn same_file_multiple_tags_for_one_class_is_reported() {
             .any(|warning| warning.contains("define 冲突")),
         "缺少同文件冲突报告: {warnings:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 0.1.2 新增：declaration.description 与结构化 default。
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fixture_declaration_has_first_paragraph_description() {
+    let module = fixture_module();
+    let declaration = &module.declarations[0];
+    assert_eq!(
+        declaration.description, "`<x-button>`：按钮组件。",
+        "只取 JSDoc 首段，第二个自然段不进 description"
+    );
+
+    let json = manifest_for_source(FIXTURE_PATH, FIXTURE)
+        .map(|module| {
+            let mut manifest = x_cem::emit::Manifest::new(vec![module]);
+            manifest.to_json()
+        })
+        .expect("fixture 应产出模块");
+    assert_json_valid(&json);
+    assert!(
+        json.contains("\"description\": \"`<x-button>`：按钮组件。\""),
+        "JSON 里应输出 declaration.description: {json}"
+    );
+}
+
+#[test]
+fn declaration_without_jsdoc_or_summary_omits_description() {
+    let src = "export class Bare extends HTMLElement {}\n\
+               /**\n\
+                * @attr {string} label - 只有标签，没有首段。\n\
+                */\n\
+               export class TagOnly extends HTMLElement {}\n\
+               customElements.define('x-bare', Bare);\n\
+               customElements.define('x-tag-only', TagOnly);\n";
+    let (manifest, _) = analyze_many(&[("a.ts", src)]);
+    let declarations = &manifest.modules[0].declarations;
+
+    assert_eq!(declarations[0].name, "Bare");
+    assert_eq!(declarations[0].description, "");
+    assert_eq!(declarations[1].name, "TagOnly");
+    assert_eq!(declarations[1].description, "");
+
+    let json = manifest_for_source("a.ts", src)
+        .map(|module| x_cem::emit::Manifest::new(vec![module]).to_json())
+        .expect("应产出模块");
+    assert_json_valid(&json);
+    assert!(
+        !json.contains("\"description\": \"\""),
+        "首段为空时不该输出空字符串 description: {json}"
+    );
+    assert!(
+        json.contains("\"description\": \"只有标签，没有首段。\""),
+        "标签的 description 不受影响: {json}"
+    );
+}
+
+#[test]
+fn default_supports_assignment_and_text_forms_with_priority() {
+    let src = r#"/**
+ * `x-probe` 组件。
+ *
+ * @attr {('sm'|'md'|'lg')} size = md - 显式赋值。
+ * @attr {string} label = "two words" - 引号默认值。
+ * @attr {number} gap - 文本兜底。Default: 8.
+ * @attr {number} ratio - Default: 0.875rem
+ * @attr {boolean} disabled - 没有默认值。
+ * @attr {('a'|'b')} mode = a - 显式优先。Default: "b".
+ * @attr {string} [title='bracket'] - 旧写法继续可用。
+ */
+export class Probe extends HTMLElement {}
+customElements.define('x-probe', Probe);
+"#;
+    let (manifest, _) = analyze_many(&[("probe.ts", src)]);
+    let attributes = &manifest.modules[0].declarations[0].attributes;
+
+    let by_name = |name: &str| {
+        attributes
+            .iter()
+            .find(|attr| attr.name == name)
+            .unwrap_or_else(|| panic!("缺少属性 {name}"))
+    };
+
+    assert_eq!(by_name("size").default.as_deref(), Some("md"));
+    assert_eq!(by_name("label").default.as_deref(), Some("two words"));
+    assert_eq!(by_name("gap").default.as_deref(), Some("8"));
+    assert_eq!(
+        by_name("ratio").default.as_deref(),
+        Some("0.875rem"),
+        "值内部的点不能被当成句末标点"
+    );
+    assert_eq!(
+        by_name("disabled").default, None,
+        "没有默认值的布尔属性不许被填成 false"
+    );
+    assert_eq!(
+        by_name("mode").default.as_deref(),
+        Some("a"),
+        "显式 JSDoc 默认值优先于描述文本里的 Default:"
+    );
+    assert_eq!(by_name("title").default.as_deref(), Some("bracket"));
 }
 
 // ---------------------------------------------------------------------------

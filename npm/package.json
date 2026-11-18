@@ -1,6 +1,6 @@
 {
   "name": "x-cem",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "零依赖、词法级（不建 AST）的 TS/JS Custom Elements Manifest（CEM 2.1.0）生成器，wasm 跨平台分发",
   "keywords": [
     "custom-elements",

@@ -27,8 +27,9 @@
   本工具只做一次线性词法扫描，因此两者是量级差异；没有把 analyzer 装进同一 benchmark，
   所以这里不写具体耗时数字。需要精确同机对比时请自行运行 analyzer 的基准。
 - 输出等价性用 fixture 做过对照：`attributes` 的 name/type/description、`events`、`slots`、
-  `cssProperties`、`cssParts` 逐条等价；`default` 只差引号风格。analyzer 额外输出
-  `members` / `superclass`，且 `schemaVersion` 为 `1.0.0`；x-cem 按 CEM 2.1.0 输出声明子集。
+  `cssProperties`、`cssParts` 逐条等价；`default` 取值一致（x-cem 输出去引号的裸值）。
+  analyzer 额外输出 `members` / `superclass`，且 `schemaVersion` 为 `1.0.0`；x-cem 按 CEM 2.1.0
+  输出声明子集（`0.1.2` 起含 `declarations[].description` 与结构化 `default`）。
 
 ## 安装与用法
 
@@ -97,18 +98,21 @@ const manifest = await scanDir('src');
         {
           "kind": "class",
           "name": "XButton",
+          "description": "`<x-button>` — an action element backed by a real native `<button>` inside the shadow root, ...",
           "tagName": "x-button",
           "customElement": true,
           "attributes": [
             {
               "name": "variant",
               "type": { "text": "('default'|'primary'|'danger'|'ghost')" },
-              "description": "Visual intent. Default: \"default\"."
+              "description": "Visual intent. Default: \"default\".",
+              "default": "default"
             },
             {
               "name": "size",
               "type": { "text": "('sm'|'md'|'lg')" },
-              "description": "Control size. Default: \"md\"."
+              "description": "Control size. Default: \"md\".",
+              "default": "md"
             }
           ],
           "events": [

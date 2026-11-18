@@ -214,6 +214,7 @@ fn assemble(analyses: Vec<FileAnalysis>) -> (Vec<Module>, Vec<String>) {
             }
             declarations.push(Declaration {
                 name,
+                description: doc.description,
                 custom_element: tag_name.is_some(),
                 tag_name,
                 attributes: doc.attributes,

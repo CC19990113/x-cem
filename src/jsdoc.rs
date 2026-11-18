@@ -5,6 +5,8 @@
 //! ```text
 //! @attr {('default'|'primary')} variant - 视觉变体
 //! @attr {('default'|'primary')} [variant='default'] - 视觉变体
+//! @attr {('default'|'primary')} variant = default - 视觉变体
+//! @attr {('default'|'primary')} variant - 视觉变体。Default: "default".
 //! @attr {boolean} [disabled=false] - 禁用
 //! @slot - 按钮文字
 //! @slot icon - 前置图标
@@ -13,12 +15,22 @@
 //! @fires x-button-click - 点击
 //! ```
 //!
-//! 标签后的续行会拼进 description。其余行（组件简介等）当前不输出。
+//! 默认值解析优先级（高 → 低）：
+//!
+//! 1. JSDoc 显式默认值：`[name=value]` 或 `name = value`；
+//! 2. 描述文本里的 `Default: value` / `Default: "value"`（大小写不敏感，引号可选）。
+//!
+//! 两条都取不到就不输出 `default` 字段——布尔属性不会被补成 `false`。
+//!
+//! 标签后的续行会拼进 description。JSDoc 首段（第一个空行之前、任何标签之前的
+//! 自然段）作为组件描述输出，为空则不输出。
 
 use crate::emit::{Attribute, CssPart, CssProperty, Event, Property, Slot};
 
 #[derive(Debug, Default, Clone)]
 pub struct Doc {
+    /// JSDoc 首段（第一个空行 / 第一个标签之前），可能为空字符串。
+    pub description: String,
     pub attributes: Vec<Attribute>,
     pub properties: Vec<Property>,
     pub events: Vec<Event>,
@@ -51,15 +63,25 @@ struct Entry {
 pub fn parse(raw: &str) -> Doc {
     let mut entries: Vec<Entry> = Vec::new();
     let mut current: Option<usize> = None;
+    let mut summary = String::new();
+    // 首段只收「第一个空行之前」且「任何标签之前」的文本行。
+    let mut in_summary = true;
+    // `/**` 后面的换行会先产生一个空行，那不算段落结束。
+    let mut started = false;
 
     let body = raw.strip_prefix("/**").unwrap_or(raw);
     let body = body.strip_suffix("*/").unwrap_or(body);
     for line in body.lines() {
         let line = clean_line(line);
         if line.is_empty() {
+            // 首段开始后的第一个空行即段落结束。
+            if started {
+                in_summary = false;
+            }
             continue;
         }
         if let Some(rest) = line.strip_prefix('@') {
+            in_summary = false;
             current = parse_tag(rest).map(|entry| {
                 entries.push(entry);
                 entries.len() - 1
@@ -70,10 +92,19 @@ pub fn parse(raw: &str) -> Doc {
                 entry.description.push('\n');
             }
             entry.description.push_str(line);
+        } else if in_summary {
+            started = true;
+            if !summary.is_empty() {
+                summary.push(' ');
+            }
+            summary.push_str(line);
         }
     }
 
-    let mut doc = Doc::default();
+    let mut doc = Doc {
+        description: summary,
+        ..Doc::default()
+    };
     for entry in entries {
         let tag = entry.tag.as_str();
         match tag {
@@ -144,7 +175,23 @@ fn parse_tag(rest: &str) -> Option<Entry> {
             let (name, default, rest) = take_member(rest);
             entry.name = name;
             entry.default = default;
+            // 显式写法 `name = value` 优先于描述文本里的 `Default: value`。
+            let rest = if entry.default.is_none() {
+                match take_assignment(rest) {
+                    Some((value, tail)) => {
+                        entry.default = Some(value);
+                        tail
+                    }
+                    None => rest,
+                }
+            } else {
+                rest
+            };
             entry.description = take_desc(rest);
+            // 描述文本兜底：Default: "md" / Default: md（大小写不敏感，引号可选）。
+            if entry.default.is_none() {
+                entry.default = default_from_text(&entry.description);
+            }
         }
         "slot" => {
             let (_ty, rest) = take_type(rest);
@@ -234,6 +281,78 @@ fn take_desc(s: &str) -> String {
         return s[pos + 3..].trim().to_string();
     }
     String::new()
+}
+
+/// 取 `= value` 形式的默认值，返回 (值, 剩余)。
+///
+/// 支持 `size = md - 说明`、`size = "a b" - 说明`；`=` 后为空则视为没写。
+fn take_assignment(s: &str) -> Option<(String, &str)> {
+    let rest = s.trim_start().strip_prefix('=')?;
+    let rest = rest.trim_start();
+    let first = rest.as_bytes().first().copied()?;
+    let (value, tail) = if first == b'"' || first == b'\'' {
+        let quote = first as char;
+        let inner = rest[1..].find(quote)?;
+        (unquote(&rest[..inner + 2]), &rest[inner + 2..])
+    } else {
+        let end = rest
+            .char_indices()
+            .find(|(_, c)| c.is_whitespace())
+            .map(|(idx, _)| idx)
+            .unwrap_or(rest.len());
+        (unquote(&rest[..end]), &rest[end..])
+    };
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+    Some((value, tail))
+}
+
+/// 从描述文本里抠 `Default: value`（大小写不敏感，引号可选）。
+///
+/// 只认独立出现的 `default:`，避免误吃 `subdefault:` 这类词。
+fn default_from_text(description: &str) -> Option<String> {
+    let lower = description.to_ascii_lowercase();
+    let needle = "default:";
+    let mut start = 0usize;
+    while let Some(rel) = lower[start..].find(needle) {
+        let idx = start + rel;
+        let boundary = idx == 0 || !description.as_bytes()[idx - 1].is_ascii_alphanumeric();
+        if boundary {
+            let after = description[idx + needle.len()..].trim_start();
+            if let Some(value) = take_text_value(after) {
+                return Some(value);
+            }
+        }
+        start = idx + needle.len();
+    }
+    None
+}
+
+/// 取描述里的一个值 token：引号内整段优先，否则到空白为止并去掉尾部标点。
+fn take_text_value(s: &str) -> Option<String> {
+    let first = s.as_bytes().first().copied()?;
+    let raw = if first == b'"' || first == b'\'' {
+        let quote = first as char;
+        let rel = s[1..].find(quote)?;
+        s[1..rel + 1].to_string()
+    } else {
+        let end = s
+            .char_indices()
+            .find(|(_, c)| c.is_whitespace())
+            .map(|(idx, _)| idx)
+            .unwrap_or(s.len());
+        s[..end]
+            .trim_end_matches(['.', ',', ';', ':', ')', ']', '}'])
+            .to_string()
+    };
+    let value = raw.trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn unquote(s: &str) -> String {
